@@ -22,7 +22,7 @@ SCBI significantly outperforms standard Random Initialization (He/Xavier) by app
 
 <p align="center">
   <!-- Replace this URL with your actual image path after uploading to GitHub, e.g., "assets/convergence_graph.png" -->
-  <img src="https://via.placeholder.com/800x400?text=Insert+Your+Graph+Here" alt="Convergence Graph">
+  <img src="https://github.com/fares3010/SCBI/blob/main/graph1.png" alt="Convergence Graph">
   <br>
   <em>Figure 1: Convergence comparison on Synthetic High-Dimensional Data.</em>
 </p>
