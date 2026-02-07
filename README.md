@@ -21,13 +21,13 @@ SCBI significantly outperforms standard Random Initialization (He/Xavier) by app
 | **Forest Cover Type** | Multi-Class Classification | **26.2%** reduction in loss |
 
 <p align="center">
-  <img src="https://github.com/fares3010/SCBI/blob/main/graph1.png" alt="Convergence Graph">
+  <img src="https://github.com/fares3010/SCBI/blob/main/graphs/graph1.png" alt="Convergence Graph">
   <br>
   <em>Figure 1: Convergence comparison on Synthetic High-Dimensional Data.</em>
 </p>
 
 <p align="center">
-  <img src="https://github.com/fares3010/SCBI/blob/main/graph2.png" alt="Regression Graph">
+  <img src="https://github.com/fares3010/SCBI/blob/main/graphs/graph2.png" alt="Regression Graph">
   <br>
   <em>Figure 2: California Housing Regression: SCBI vs Random.</em>
 </p>
@@ -35,7 +35,7 @@ SCBI significantly outperforms standard Random Initialization (He/Xavier) by app
 ---
 
 <p align="center">
-  <img src="https://github.com/fares3010/SCBI/blob/main/graph3.png" alt="Classification Graph">
+  <img src="https://github.com/fares3010/SCBI/blob/main/graphs/graph3.png" alt="Classification Graph">
   <br>
   <em>Figure 3: Multi-Class Classification: SCBI vs Random.</em>
 </p>
