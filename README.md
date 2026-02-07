@@ -90,15 +90,3 @@ $$\theta_{SCBI} = \frac{1}{K} \sum_{k=1}^{K} \left[ \left( \tilde{X}_k^T \tilde{
 
 By computing this on random subsets (Bagging) using GPU matrix operations, we obtain a robust estimator of the global minimum without the $O(N^3)$ cost of full matrix inversion.
 
-## 📄 Citation
-
-If you use SCBI in your research, please cite our paper:
-
-```bibtex
-@article{scbi2026,
-  title={Stochastic Covariance-Based Initialization (SCBI): A Scalable Warm-Start Strategy for High-Dimensional Linear Models},
-  author={Fares Ashraf},
-  journal={arXiv preprint},
-  year={2026}
-}
-```
