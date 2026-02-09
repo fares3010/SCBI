@@ -6,7 +6,7 @@
 
 **Official implementation of the paper: "Stochastic Covariance-Based Initialization (SCBI): A Scalable Warm-Start Strategy for High-Dimensional Linear Models"**
 
-> **TL;DR:**A novel neural network weight initialization method that achieves **87× faster convergence** on regression tasks and **33% lower initial loss** on classification tasks. SCBI is a GPU-accelerated initialization method that calculates the optimal starting weights for linear layers using covariance statistics. It effectively "solves" linear regression tasks before the first epoch of training, replacing random initialization with a statistically grounded "warm start."
+> A novel neural network weight initialization method that achieves **87× faster convergence** on regression tasks and **33% lower initial loss** on classification tasks. SCBI is a GPU-accelerated initialization method that calculates the optimal starting weights for linear layers using covariance statistics. It effectively "solves" linear regression tasks before the first epoch of training, replacing random initialization with a statistically grounded "warm start."
 
 ---
 
@@ -50,6 +50,30 @@ SCBI significantly outperforms standard Random Initialization (He/Xavier) by app
 | **Regression** | Final MSE | 22,000 | ~0 | **>1000×** |
 | **Classification** | Initial Loss | 1.18 | 0.79 | **33%** |
 | **Classification** | Final Loss | 1.14 | 0.77 | **32%** |
+
+<p align="center">
+  <img src="https://github.com/fares3010/SCBI/blob/main/graphs/graph4.png" alt="Classification Graph">
+  <br>
+  <em>Figure 4: Performance Results </em>
+</p>
+
+---
+
+<p align="center">
+  <img src="https://github.com/fares3010/SCBI/blob/main/graphs/graph5.png" alt="Classification Graph">
+  <br>
+  <em>Figure 5: Performance Results </em>
+</p>
+
+---
+
+<p align="center">
+  <img src="https://github.com/fares3010/SCBI/blob/main/graphs/graph7.png" alt="Classification Graph">
+  <br>
+  <em>Figure 6: Performance Results </em>
+</p>
+
+---
 
 ## 📖 What is SCBI?
 
