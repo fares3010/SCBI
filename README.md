@@ -402,13 +402,7 @@ Averaging across multiple random subsets provides:
 If you use SCBI in your research, please cite:
 
 ```bibtex
-@software{fares2026scbi,
-  author = {Ashraf, Fares},
-  title = {SCBI: Stochastic Covariance-Based Initialization for Neural Networks},
-  year = {2026},
-  url = {https://github.com/fares3010/SCBI},
-  version = {1.0.0}
-}
+Fares, A. (2026). SCBI: Stochastic Covariance-Based Initialization (1.0.0). Zenodo. https://doi.org/10.5281/zenodo.18576203
 ```
 
 ## 📜 License
