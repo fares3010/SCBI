@@ -1,0 +1,11 @@
+preferred-citation:
+  type: software
+  title: "SCBI: Stochastic Covariance-Based Initialization"
+  doi: 10.5281/zenodo.18576203
+  url: "https://doi.org/10.5281/zenodo.18576203"
+  authors:
+    - family-names: "Ashraf"
+      given-names: "Fares"
+  year: 2026
+  version: "1.0.0"
+```
