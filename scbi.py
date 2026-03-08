@@ -3,8 +3,8 @@ SCBI: Stochastic Covariance-Based Initialization
 A Scalable Warm-Start Strategy for High-Dimensional Linear Models.
 
 Author: Fares Ashraf
-Version: 3.0.0 (Production Release)
-DOI: 10.5281/zenodo.18576203
+Version: 1.2.0 (Production Release)
+DOI: 10.5281/zenodo.18850507
 License: MIT
 
 This module provides a GPU-accelerated initialization strategy that
@@ -144,15 +144,100 @@ class SCBILinear(nn.Module):
 
         return best_lambda
 
+    def _tune_classification_cv(
+            self, X: torch.Tensor, y_raw: torch.Tensor, lambdas: list, scales: list, num_classes: int
+        ) -> Tuple[float, float]:
+            """
+            2D Grid Search CV for Classification.
+            Tunes both Ridge penalty (λ) and Confidence Scale (S) by evaluating
+            the linear approximations against the true Cross-Entropy / BCE loss.
+            """
+            n_samples = X.shape[0]
+            if n_samples < self.cv_folds:
+                return self.ridge_alpha, scales[0]
+
+            indices = torch.randperm(n_samples, device=X.device)
+            X_shuffled = X[indices]
+            y_shuffled = y_raw[indices]
+
+            fold_size = n_samples // self.cv_folds
+            best_lambda = lambdas[0]
+            best_scale = scales[0]
+            best_loss = float('inf')
+
+            identity = torch.eye(self.in_features, device=X.device, dtype=X.dtype)
+            is_binary = (self.out_features == 1)
+            criterion = torch.nn.BCEWithLogitsLoss() if is_binary else torch.nn.CrossEntropyLoss()
+
+            for scale in scales:
+                # 1. Map labels to logits for the current scale
+                if is_binary:
+                    y_mapped = (y_shuffled.float().view(-1, 1) * 2.0 - 1.0) * scale
+                else:
+                    y_one_hot = torch.nn.functional.one_hot(y_shuffled.long(), num_classes=num_classes).float()
+                    y_mapped = (y_one_hot * 2.0 - 1.0) * scale
+
+                for lam in lambdas:
+                    val_losses = []
+
+                    for k in range(self.cv_folds):
+                        val_start = k * fold_size
+                        val_end = (k + 1) * fold_size if k < self.cv_folds - 1 else n_samples
+
+                        val_idx = torch.arange(val_start, val_end, device=X.device)
+                        train_idx = torch.cat([
+                            torch.arange(0, val_start, device=X.device),
+                            torch.arange(val_end, n_samples, device=X.device)
+                        ])
+
+                        X_train, y_train_map = X_shuffled[train_idx], y_mapped[train_idx]
+                        X_val, y_val_raw = X_shuffled[val_idx], y_shuffled[val_idx]
+
+                        # 2. Solve Ridge Regression
+                        X_mean, y_mean = X_train.mean(dim=0), y_train_map.mean(dim=0)
+                        X_c, y_c = X_train - X_mean, y_train_map - y_mean
+
+                        XTX = torch.matmul(X_c.T, X_c)
+                        XTy = torch.matmul(X_c.T, y_c)
+
+                        try:
+                            w = torch.linalg.solve(XTX + lam * identity, XTy)
+                        except RuntimeError:
+                            w = torch.matmul(torch.linalg.pinv(XTX + lam * identity), XTy)
+
+                        b = y_mean - torch.matmul(w.T, X_mean)
+                        b = b.squeeze()
+
+                        # 3. Evaluate using the TRUE Classification Loss Function
+                        preds = torch.matmul(X_val, w) + b
+
+                        if is_binary:
+                            loss = criterion(preds.view(-1), y_val_raw.float().view(-1))
+                        else:
+                            loss = criterion(preds, y_val_raw.long())
+
+                        val_losses.append(loss.item())
+
+                    avg_loss = sum(val_losses) / len(val_losses)
+
+                    if avg_loss < best_loss:
+                        best_loss = avg_loss
+                        best_lambda = lam
+                        best_scale = scale
+
+            return best_lambda, best_scale
+
     def init_weights_with_proxy(
         self,
         proxy_x: torch.Tensor,
         proxy_y: Optional[torch.Tensor] = None,
+        task: str = "regression",
+        confidence_scale: float = 6.0,  # Acts as fallback if tuning is disabled
         verbose: bool = True
     ) -> None:
         """
         Main initialization function. Computes proxy statistics via bagging,
-        tunes Ridge penalty, and assigns optimal weights.
+        tunes Ridge penalty (and scale for classification), and assigns optimal weights.
         """
         with torch.no_grad():
             n_total = proxy_x.shape[0]
@@ -160,24 +245,57 @@ class SCBILinear(nn.Module):
             n_outputs = self.out_features
             subset_size = max(1, int(n_total * self.sample_ratio))
 
-            # For hidden layers, project using current variance-preserving weights
-            if proxy_y is None:
-                proxy_y = torch.matmul(proxy_x, self.weight.T)
-            if proxy_y.ndim == 1:
-                proxy_y = proxy_y.unsqueeze(1)
+            active_lambda = self.ridge_alpha
+            active_scale = confidence_scale
+
+            # --- CLASSIFICATION LOGIC & 2D GRID SEARCH ---
+            if proxy_y is not None and task == "classification":
+                is_binary = (self.out_features == 1)
+
+                # Standardize to raw labels
+                if proxy_y.ndim == 1 or proxy_y.shape[1] == 1:
+                    proxy_y_raw = proxy_y.squeeze()
+                    num_classes = 2 if is_binary else int(proxy_y_raw.max().item()) + 1
+                else:
+                    proxy_y_raw = torch.argmax(proxy_y, dim=1)
+                    num_classes = proxy_y.shape[1]
+
+                # 2D Grid Search (Ridge λ + Confidence Scale)
+                if self.tune_ridge:
+                    lambdas_space = [0.01, 0.1, 1.0, 10.0, 100.0]
+                    scales_space = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+                    active_lambda, active_scale = self._tune_classification_cv(
+                        proxy_x, proxy_y_raw, lambdas_space, scales_space, num_classes
+                    )
+
+                if verbose:
+                    print(f"   ⚙️ Mapped logit space (±{active_scale}) | 🔍 CV Ridge (λ): {active_lambda}")
+
+                # Map targets using the mathematically optimal scale
+                if is_binary:
+                    proxy_y = (proxy_y_raw.float().view(-1, 1) * 2.0 - 1.0) * active_scale
+                else:
+                    y_one_hot = torch.nn.functional.one_hot(proxy_y_raw.long(), num_classes=num_classes).float()
+                    proxy_y = (y_one_hot * 2.0 - 1.0) * active_scale
+
+            # --- REGRESSION LOGIC (Standard CV) ---
+            else:
+                if proxy_y is None:
+                    proxy_y = torch.matmul(proxy_x, self.weight.T)
+                if proxy_y.ndim == 1:
+                    proxy_y = proxy_y.unsqueeze(1)
+
+                if self.tune_ridge:
+                    search_space = [0.01, 0.1, 1.0, 10.0, 100.0]
+                    active_lambda = self._tune_ridge_cv(proxy_x, proxy_y, search_space)
+                    if verbose:
+                        print(f"   🔍 CV Optimal Ridge (λ): {active_lambda}")
 
             if verbose:
                 print(f"🚀 SCBI Initialization")
                 print(f"   Proxy: {n_total} samples | Layer: [{n_features} → {n_outputs}]")
 
-            # --- DYNAMIC RIDGE TUNING ---
-            active_lambda = self.ridge_alpha
-            if self.tune_ridge:
-                search_space = [0.01, 0.1, 1.0, 10.0, 100.0]
-                active_lambda = self._tune_ridge_cv(proxy_x, proxy_y, search_space)
-                if verbose:
-                    print(f"   🔍 CV Optimal Ridge (λ): {active_lambda}")
-
+            # ... (Rest of the Bagging Loop remains exactly the same!) ...
             accumulated_weights = torch.zeros((n_features, n_outputs), device=proxy_x.device, dtype=proxy_x.dtype)
             accumulated_bias = torch.zeros((1, n_outputs), device=proxy_x.device, dtype=proxy_x.dtype)
 
@@ -242,6 +360,8 @@ class SCBISequential(nn.Sequential):
         self,
         proxy_x: torch.Tensor,
         proxy_y: Optional[torch.Tensor] = None,
+        task: str = "regression",         
+        confidence_scale: float = 2.0,    
         verbose: bool = True
     ) -> None:
         if verbose:
@@ -257,7 +377,16 @@ class SCBISequential(nn.Sequential):
                 is_last_scbi = not any(isinstance(m, SCBILinear) for m in list(self)[i+1:])
                 target = proxy_y if (is_last_scbi and proxy_y is not None) else None
 
-                module.init_weights_with_proxy(current_activation, target, verbose=verbose)
+                # Only apply the classification mapping to the final layer
+                layer_task = task if (is_last_scbi and target is not None) else "regression"
+
+                module.init_weights_with_proxy(
+                    current_activation,
+                    target,
+                    task=layer_task,                      
+                    confidence_scale=confidence_scale,    
+                    verbose=verbose
+                )
 
                 with torch.no_grad():
                     current_activation = module(current_activation)
@@ -312,6 +441,8 @@ def scbi_init(
     sample_ratio: float = 0.5,
     ridge_alpha: float = 1.0,
     tune_ridge: bool = True,
+    task: str = "regression",         
+    confidence_scale: float = 2.0,    
     verbose: bool = True
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
@@ -320,15 +451,20 @@ def scbi_init(
     """
     layer = SCBILinear(
         in_features=X_data.shape[1],
-        out_features=1 if y_data.ndim == 1 else y_data.shape[1],
+        out_features=1 if y_data.ndim == 1 else y_data.shape[1], # Will be overridden if one-hot mapping triggers
         n_samples=n_samples,
         sample_ratio=sample_ratio,
         ridge_alpha=ridge_alpha,
         tune_ridge=tune_ridge
     )
 
-    layer.init_weights_with_proxy(X_data, y_data, verbose=verbose)
+    layer.init_weights_with_proxy(
+        X_data,
+        y_data,
+        task=task,                            
+        confidence_scale=confidence_scale,    
+        verbose=verbose
+    )
     return layer.weight.data.T, layer.bias.data
-
 
 __all__ = ['SCBILinear', 'SCBISequential', 'create_scbi_mlp', 'scbi_init']
